@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#08090b" />
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <title>Верити: Бэкрумс</title>
+  </head>
+  <body>
+    <main id="game-shell">
+      <canvas id="game-canvas" aria-label="Игровое поле"></canvas>
+
+      <section id="hud" aria-live="polite">
+        <p id="objective">Найдите записку и ключ от выхода.</p>
+        <p id="status">Прототип готов к запуску.</p>
+        <div id="flashlight-hud" aria-label="Заряд фонаря">
+          <span>Фонарь [F]</span>
+          <span class="charge-track" aria-hidden="true"><span id="flashlight-charge-fill"></span></span>
+          <span id="flashlight-value">100%</span>
+        </div>
+        <div id="inventory-hud" aria-label="Инвентарь">
+          <span>Инвентарь</span>
+          <span id="inventory-items">Пусто</span>
+        </div>
+        <div id="lives-hud" aria-label="Оставшиеся попытки">
+          <span>Попытки</span>
+          <span id="lives-value">● ● ●</span>
+        </div>
+        <div id="boss-hud" class="hidden" aria-label="Прочность Верити">
+          <span>ВЕРИТИ</span>
+          <span class="boss-health-track" aria-hidden="true"><span id="boss-health-fill"></span></span>
+          <span id="boss-health-value">8/8</span>
+        </div>
+      </section>
+
+      <div id="crosshair" aria-hidden="true">+</div>
+      <p id="interaction-prompt" class="hidden" aria-live="polite"></p>
+
+      <nav id="quick-actions" class="hidden" aria-label="Быстрые действия">
+        <button id="journal-button" class="secondary-button" type="button">J · Журнал</button>
+        <button id="sound-toggle-button" class="icon-button" type="button" aria-pressed="false">Звук: вкл.</button>
+      </nav>
+
+      <section id="mobile-controls" class="hidden" aria-label="Сенсорное управление">
+        <div id="look-zone" aria-label="Зона обзора"></div>
+        <div id="move-pad" aria-label="Стик движения">
+          <span id="move-thumb"></span>
+        </div>
+        <div class="mobile-actions">
+          <button id="mobile-action-button" type="button">E<br><small>Действие</small></button>
+          <button id="mobile-flashlight-button" type="button">F<br><small>Фонарь</small></button>
+          <button id="mobile-journal-button" type="button">J<br><small>Журнал</small></button>
+        </div>
+      </section>
+
+      <section id="start-screen">
+        <div class="menu-shell">
+          <header class="menu-header">
+            <div class="menu-copy">
+              <h1>Верити: Бэкрумс</h1>
+              <p id="menu-current-zone" class="menu-current-zone">Загрузка…</p>
+            </div>
+            <div class="verity-sigil" aria-hidden="true">
+              <span class="verity-eye verity-eye-left"></span>
+              <span class="verity-eye verity-eye-right"></span>
+              <span class="verity-smile"></span>
+            </div>
+          </header>
+
+          <div class="menu-primary-actions">
+            <button id="start-button" class="primary-menu-button" type="button" disabled>Загрузка…</button>
+          </div>
+
+          <section class="level-select" aria-labelledby="level-select-title">
+            <div class="level-select-heading">
+              <h2 id="level-select-title">Уровни</h2>
+              <span id="menu-unlocked-count">— из 4</span>
+            </div>
+            <div id="level-grid" class="level-grid">
+              <button class="level-card" type="button" data-level="1" disabled>
+                <span class="level-number">01</span>
+                <strong>Бэкрумс</strong>
+                <span class="level-state">Открыт</span>
+              </button>
+              <button class="level-card" type="button" data-level="2" disabled>
+                <span class="level-number">02</span>
+                <strong>Кубические шахты</strong>
+                <span class="level-state">Закрыт</span>
+              </button>
+              <button class="level-card" type="button" data-level="3" disabled>
+                <span class="level-number">03</span>
+                <strong>Лаборатория</strong>
+                <span class="level-state">Закрыт</span>
+              </button>
+              <button class="level-card" type="button" data-level="4" disabled>
+                <span class="level-number">04</span>
+                <strong>Камера подавления</strong>
+                <span class="level-state">Закрыт</span>
+              </button>
+            </div>
+          </section>
+          <p id="controls-copy" class="controls menu-controls">WASD · мышь · E · F · J</p>
+        </div>
+      </section>
+
+      <section id="zone-transition" class="hidden" aria-live="assertive">
+        <div class="transition-card">
+          <p id="transition-kicker" class="eyebrow">НОВЫЙ УРОВЕНЬ</p>
+          <h2 id="transition-title"></h2>
+          <p id="transition-subtitle"></p>
+          <span class="transition-line" aria-hidden="true"></span>
+        </div>
+      </section>
+
+      <section id="note-screen" class="modal-screen hidden" role="dialog" aria-modal="true" aria-labelledby="note-title">
+        <article class="note-card">
+          <p class="eyebrow">НАЙДЕННАЯ ЗАПИСКА</p>
+          <h2 id="note-title"></h2>
+          <p id="note-body"></p>
+          <button id="note-close-button" type="button">Закрыть</button>
+        </article>
+      </section>
+
+      <section id="journal-screen" class="modal-screen hidden" role="dialog" aria-modal="true" aria-labelledby="journal-title">
+        <article class="journal-card">
+          <p class="eyebrow">АРХИВ УРОВНЯ</p>
+          <h2 id="journal-title">Журнал</h2>
+          <p id="journal-progress" class="journal-progress"></p>
+          <div id="journal-notes" class="journal-notes"></div>
+          <button id="journal-close-button" type="button">Закрыть журнал</button>
+        </article>
+      </section>
+
+      <section id="caught-screen" class="modal-screen hidden" role="dialog" aria-modal="true" aria-labelledby="caught-title">
+        <div class="panel caught-panel">
+          <p class="eyebrow">ПОГОНЯ ОКОНЧЕНА</p>
+          <h2 id="caught-title">Верити поймал вас</h2>
+          <p id="caught-message">Собранные предметы сохраняются, но вы возвращаетесь к контрольной точке.</p>
+          <button id="retry-button" type="button">Попробовать снова</button>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
+

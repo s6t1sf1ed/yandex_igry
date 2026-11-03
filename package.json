@@ -1,0 +1,28 @@
+{
+  "name": "liminal-hunt",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test:input": "node scripts/input-smoke.mjs",
+    "test:lives": "node scripts/lives-smoke.mjs",
+    "test:hazards": "node scripts/mine-hazard-smoke.mjs",
+    "test:boss": "node scripts/boss-smoke.mjs",
+    "test:menu": "node scripts/menu-smoke.mjs",
+    "test:zones-visual": "node scripts/zone-visual-smoke.mjs",
+    "test:verity-visual": "node scripts/verity-visual-smoke.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@babylonjs/core": "9.33.2"
+  },
+  "devDependencies": {
+    "playwright-core": "1.64.1",
+    "typescript": "7.0.2",
+    "vite": "8.3.5"
+  }
+}
+
