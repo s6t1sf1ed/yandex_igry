@@ -123,7 +123,13 @@ async function testDesktop() {
       await page.waitForTimeout(30);
     }
   }
+  const afterBossDefeat = await qaState(page);
+  await page.evaluate(() => window.__liminalHuntQa.teleportForQa("boss-exit"));
+  await page.waitForTimeout(100);
+  await page.keyboard.press("e");
+  await page.waitForTimeout(180);
   const afterCompletion = await qaState(page);
+  const endingVisible = await page.locator("#ending-screen").isVisible();
 
   await page.reload({ waitUntil: "networkidle" });
   await page.waitForFunction(() => Boolean(window.__liminalHuntQa));
@@ -154,7 +160,8 @@ async function testDesktop() {
   const bossTransitioned = afterBossTransition.zone === "boss-arena" && afterBossTransition.bossHealth === 8;
   const bossWeaponCollected =
     afterBossWeapon.hasBossWeapon && afterBossWeapon.inventoryItemIds.includes("pulse-blaster");
-  const levelCompleted = afterCompletion.completed && afterCompletion.bossHealth === 0;
+  const bossExitUnlocked = !afterBossDefeat.completed && afterBossDefeat.bossHealth === 0;
+  const levelCompleted = afterCompletion.completed && afterCompletion.bossHealth === 0 && endingVisible;
   const completionRestored =
     restoredState.zone === "boss-arena" &&
     restoredState.activatedValveIds.length === 3 &&
@@ -196,6 +203,7 @@ async function testDesktop() {
       labAggressionIncreased &&
       bossTransitioned &&
       bossWeaponCollected &&
+      bossExitUnlocked &&
       levelCompleted &&
       completionRestored &&
       errors.length === 0,
@@ -225,6 +233,8 @@ async function testDesktop() {
     labAggressionIncreased,
     bossTransitioned,
     bossWeaponCollected,
+    bossExitUnlocked,
+    endingVisible,
     levelCompleted,
     completionRestored,
     initial,

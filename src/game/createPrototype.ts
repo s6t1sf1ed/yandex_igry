@@ -6,6 +6,7 @@ import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import { PointLight } from "@babylonjs/core/Lights/pointLight";
 import { SpotLight } from "@babylonjs/core/Lights/spotLight";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
@@ -13,6 +14,7 @@ import { CreateDecal } from "@babylonjs/core/Meshes/Builders/decalBuilder";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import { ParticleSystem } from "@babylonjs/core/Particles/particleSystem";
 import { Scene } from "@babylonjs/core/scene";
 import type { GameAudioEvent } from "../audio/soundManager";
 import {
@@ -22,6 +24,7 @@ import {
   MINE_VERITY_START,
 } from "./createBlockMine";
 import {
+  BOSS_EXIT_POSITION,
   BOSS_PLAYER_START,
   BOSS_VERITY_START,
   createBossArena,
@@ -75,6 +78,7 @@ type PrototypeCallbacks = {
   onFlashlightChange(charge: number, enabled: boolean): void;
   onAudioEvent(event: GameAudioEvent): void;
   onCaught(livesRemaining: number, resetRequired: boolean): void;
+  onFinale(): void;
   onEscape(): void;
 };
 
@@ -111,7 +115,8 @@ export type PrototypeGame = {
       | "lab-terminal-3"
       | "lab-note"
       | "lab-exit"
-      | "boss-weapon",
+      | "boss-weapon"
+      | "boss-exit",
   ): void;
   shootForQa(): void;
   destroyBossRelayForQa(): void;
@@ -310,7 +315,6 @@ export function createPrototype(
   const pipeExitMaterial = material(scene, "pipe-exit-mat", new Color3(0.28, 0.09, 0.07), true);
   const valveBodyMaterial = material(scene, "valve-body-mat", new Color3(0.18, 0.2, 0.2));
   const valveInactiveMaterial = material(scene, "valve-inactive-mat", new Color3(0.3, 0.1, 0.055));
-  const valveActiveMaterial = material(scene, "valve-active-mat", new Color3(0.07, 0.28, 0.15));
   const valveIndicatorActiveMaterial = material(
     scene,
     "valve-indicator-active-mat",
@@ -391,9 +395,48 @@ export function createPrototype(
     new Vector3(41.5, 1.25, 5),
     new Vector3(56.2, 1.25, 8),
   ];
+  const valveTopConnections = [
+    { direction: 1, length: 2.8 },
+    { direction: 1, length: 3.5 },
+    { direction: -1, length: 3.2 },
+  ] as const;
   const pipeValves = PIPE_VALVE_IDS.map((id, index) => {
     const mesh = new TransformNode(id, scene);
     mesh.position.copyFrom(valvePositions[index]);
+
+    const riser = MeshBuilder.CreateCylinder(
+      `${id}-riser`,
+      { diameter: 0.3, height: 3.8, tessellation: 14 },
+      scene,
+    );
+    riser.parent = mesh;
+    riser.position.set(0, 0.75, -0.24);
+    riser.material = pipeMetalMaterial;
+
+    const topRun = MeshBuilder.CreateCylinder(
+      `${id}-top-run`,
+      { diameter: 0.3, height: valveTopConnections[index].length, tessellation: 14 },
+      scene,
+    );
+    topRun.parent = mesh;
+    topRun.position.set(
+      (valveTopConnections[index].direction * valveTopConnections[index].length) / 2,
+      2.48,
+      -0.24,
+    );
+    topRun.rotation.z = Math.PI / 2;
+    topRun.material = pipeMetalMaterial;
+
+    [-0.95, 2.35].forEach((height, collarIndex) => {
+      const collar = MeshBuilder.CreateTorus(
+        `${id}-collar-${collarIndex}`,
+        { diameter: 0.4, thickness: 0.045, tessellation: 14 },
+        scene,
+      );
+      collar.parent = mesh;
+      collar.position.set(0, height, -0.24);
+      collar.material = valveBodyMaterial;
+    });
 
     const mount = MeshBuilder.CreateCylinder(
       `${id}-mount`,
@@ -438,20 +481,19 @@ export function createPrototype(
 
     const indicator = MeshBuilder.CreateBox(
       `${id}-indicator`,
-      { width: 0.34, height: 0.14, depth: 0.08 },
+      { width: 0.18, height: 0.09, depth: 0.07 },
       scene,
     );
     indicator.parent = mesh;
-    indicator.position.set(0, 0.45, 0.05);
+    indicator.position.set(0, 0.4, 0.06);
 
     return { id, mesh, wheel, spokes, indicator };
   });
 
   const setPipeValveState = (valve: (typeof pipeValves)[number], active: boolean) => {
-    const stateMaterial = active ? valveActiveMaterial : valveInactiveMaterial;
-    valve.wheel.material = stateMaterial;
+    valve.wheel.material = valveInactiveMaterial;
     valve.spokes.forEach((spoke) => {
-      spoke.material = stateMaterial;
+      spoke.material = valveInactiveMaterial;
     });
     valve.indicator.material = active ? valveIndicatorActiveMaterial : valveInactiveMaterial;
     valve.wheel.rotation.z = active ? Math.PI / 4 : 0;
@@ -538,25 +580,63 @@ export function createPrototype(
   muzzleFlash.setEnabled(false);
   heldBlaster.setEnabled(false);
 
-  const steamMaterial = material(scene, "steam-mat", new Color3(0.72, 0.76, 0.77), true);
-  steamMaterial.alpha = 0.22;
-  steamMaterial.disableLighting = true;
+  const steamTexture = new DynamicTexture(
+    "steam-puff-texture",
+    { width: 64, height: 64 },
+    scene,
+    false,
+  );
+  const steamTextureContext = steamTexture.getContext();
+  const steamGradient = steamTextureContext.createRadialGradient(32, 32, 2, 32, 32, 31);
+  steamGradient.addColorStop(0, "rgba(255,255,255,0.88)");
+  steamGradient.addColorStop(0.38, "rgba(225,232,232,0.48)");
+  steamGradient.addColorStop(1, "rgba(205,214,214,0)");
+  steamTextureContext.clearRect(0, 0, 64, 64);
+  steamTextureContext.fillStyle = steamGradient;
+  steamTextureContext.fillRect(0, 0, 64, 64);
+  steamTexture.update();
   const steamPositions = [
     new Vector3(34, 1.45, 1),
     new Vector3(49, 1.45, -4),
     new Vector3(56, 1.45, 4),
   ];
   const steamJets = steamPositions.map((position, index) => {
-    const cloud = MeshBuilder.CreateSphere(
-      `steam-cloud-${index}`,
-      { diameter: 1.5, segments: 10 },
+    const nozzle = MeshBuilder.CreateCylinder(
+      `steam-nozzle-${index}`,
+      { diameter: 0.32, height: 0.8, tessellation: 12 },
       scene,
     );
-    cloud.position.copyFrom(position);
-    cloud.scaling.set(2.8, 1.4, 0.7);
-    cloud.material = steamMaterial;
-    cloud.isPickable = false;
-    cloud.setEnabled(false);
+    nozzle.position.copyFrom(position.add(new Vector3(-2.45, 0, 0)));
+    nozzle.rotation.z = Math.PI / 2;
+    nozzle.material = pipeMetalMaterial;
+
+    const steam = new ParticleSystem(`steam-jet-${index}`, 420, scene);
+    steam.particleTexture = steamTexture;
+    steam.emitter = nozzle.position.add(new Vector3(0.3, 0, 0));
+    steam.minEmitBox = new Vector3(0, -0.08, -0.12);
+    steam.maxEmitBox = new Vector3(0.08, 0.08, 0.12);
+    steam.color1 = new Color4(0.86, 0.89, 0.89, 0.16);
+    steam.color2 = new Color4(0.62, 0.68, 0.68, 0.07);
+    steam.colorDead = new Color4(0.45, 0.5, 0.5, 0);
+    steam.minSize = 0.3;
+    steam.maxSize = 1.1;
+    steam.minLifeTime = 1.3;
+    steam.maxLifeTime = 1.9;
+    steam.emitRate = 260;
+    steam.direction1 = new Vector3(3, 0.05, -0.18);
+    steam.direction2 = new Vector3(4, 0.42, 0.18);
+    steam.minEmitPower = 1.2;
+    steam.maxEmitPower = 1.8;
+    steam.gravity = new Vector3(0, 0.22, 0);
+    steam.minAngularSpeed = -0.35;
+    steam.maxAngularSpeed = 0.35;
+    steam.blendMode = ParticleSystem.BLENDMODE_STANDARD;
+    steam.updateSpeed = 0.012;
+    steam.preWarmCycles = 50;
+    steam.preWarmStepOffset = 0.01;
+    steam.addSizeGradient(0, 0.28);
+    steam.addSizeGradient(0.42, 0.78);
+    steam.addSizeGradient(1, 1.15);
 
     const blocker = MeshBuilder.CreateBox(
       `steam-blocker-${index}`,
@@ -567,7 +647,7 @@ export function createPrototype(
     blocker.visibility = 0;
     blocker.isPickable = false;
     blocker.setEnabled(false);
-    return { cloud, blocker, phaseOffset: index * 1.65, active: false };
+    return { position, steam, blocker, phaseOffset: index * 1.65, active: false };
   });
 
   const key = new TransformNode("key", scene);
@@ -711,7 +791,11 @@ export function createPrototype(
   let bossStunTime = 0;
   let bossPhase = bossPhaseForHealth(bossHealth);
   let bossMode: "dormant" | "shielded" | "vulnerable" | "defeated" =
-    levelCompleted ? "defeated" : hasBossWeapon && currentZone === "boss-arena" ? "shielded" : "dormant";
+    levelCompleted || bossHealth === 0
+      ? "defeated"
+      : hasBossWeapon && currentZone === "boss-arena"
+        ? "shielded"
+        : "dormant";
   let bossVulnerabilityTime = 0;
   let bossDamageThisWindow = 0;
   let bossAttackCooldown = 1.8;
@@ -743,6 +827,7 @@ export function createPrototype(
   });
   updateHeldPickaxeVisibility();
   updateHeldBlasterVisibility();
+  updateBossExitState();
   updateMinePortalState();
   updateLabExitState();
 
@@ -938,7 +1023,7 @@ export function createPrototype(
     observationLab.exitDoor.checkCollisions = false;
     observationLab.exitDoor.metadata.blocksVision = false;
     verity.setEnabled(!levelCompleted && bossHealth > 0);
-    if (levelCompleted) {
+    if (levelCompleted || bossHealth === 0) {
       bossMode = "defeated";
       setBossDormant();
       bossMode = "defeated";
@@ -1018,9 +1103,9 @@ export function createPrototype(
     scene.fogMode = Scene.FOGMODE_LINEAR;
     if (currentZone === "boss-arena") {
       scene.clearColor = new Color4(0.006, 0.009, 0.012, 1);
-      scene.fogColor = new Color3(0.008, 0.012, 0.016);
-      scene.fogStart = 16;
-      scene.fogEnd = 42;
+      scene.fogColor = new Color3(0.006, 0.009, 0.012);
+      scene.fogStart = 24;
+      scene.fogEnd = 70;
       light.intensity = 0.18;
       light.diffuse = new Color3(0.42, 0.52, 0.58);
       light.groundColor = new Color3(0.018, 0.022, 0.028);
@@ -1028,9 +1113,9 @@ export function createPrototype(
     }
     if (currentZone === "observation-lab") {
       scene.clearColor = new Color4(0.012, 0.017, 0.02, 1);
-      scene.fogColor = new Color3(0.018, 0.026, 0.03);
-      scene.fogStart = 15;
-      scene.fogEnd = 46;
+      scene.fogColor = new Color3(0.012, 0.017, 0.02);
+      scene.fogStart = 22;
+      scene.fogEnd = 65;
       light.intensity = 0.22;
       light.diffuse = new Color3(0.52, 0.65, 0.65);
       light.groundColor = new Color3(0.025, 0.035, 0.04);
@@ -1038,9 +1123,9 @@ export function createPrototype(
     }
     if (currentZone === "block-mines") {
       scene.clearColor = new Color4(0.018, 0.014, 0.02, 1);
-      scene.fogColor = new Color3(0.025, 0.018, 0.028);
-      scene.fogStart = 16;
-      scene.fogEnd = 50;
+      scene.fogColor = new Color3(0.018, 0.014, 0.02);
+      scene.fogStart = 22;
+      scene.fogEnd = 70;
       light.intensity = 0.2;
       light.diffuse = new Color3(0.64, 0.52, 0.44);
       light.groundColor = new Color3(0.04, 0.025, 0.045);
@@ -1048,18 +1133,18 @@ export function createPrototype(
     }
     if (currentZone === "pipe-dreams") {
       scene.clearColor = new Color4(0.022, 0.025, 0.027, 1);
-      scene.fogColor = new Color3(0.03, 0.034, 0.035);
-      scene.fogStart = 12;
-      scene.fogEnd = 40;
+      scene.fogColor = new Color3(0.022, 0.025, 0.027);
+      scene.fogStart = 18;
+      scene.fogEnd = 55;
       light.intensity = 0.16;
       light.diffuse = new Color3(0.58, 0.62, 0.64);
       light.groundColor = new Color3(0.025, 0.028, 0.03);
       return;
     }
     scene.clearColor = new Color4(0.055, 0.052, 0.035, 1);
-    scene.fogColor = new Color3(0.085, 0.08, 0.045);
-    scene.fogStart = 10;
-    scene.fogEnd = 34;
+    scene.fogColor = new Color3(0.055, 0.052, 0.035);
+    scene.fogStart = 16;
+    scene.fogEnd = 42;
     light.intensity = 0.38;
     light.diffuse = new Color3(1, 0.94, 0.68);
     light.groundColor = new Color3(0.09, 0.085, 0.055);
@@ -1202,6 +1287,7 @@ export function createPrototype(
     bossArena.weaponMeshes.forEach((mesh) => mesh.setEnabled(!hasBossWeapon));
     updateHeldPickaxeVisibility();
     updateHeldBlasterVisibility();
+    updateBossExitState();
     applyZoneAtmosphere();
     callbacks.onAudioEvent("elevator");
     callbacks.onObjectiveChange(
@@ -1349,6 +1435,7 @@ export function createPrototype(
     setBossDormant();
     updateHeldPickaxeVisibility();
     updateHeldBlasterVisibility();
+    updateBossExitState();
     applyZoneAtmosphere();
     updateFlashlight();
     callbacks.onInventoryChange([...inventoryItemIds]);
@@ -1424,6 +1511,7 @@ export function createPrototype(
     activeVerityController.reset(false);
     updateHeldPickaxeVisibility();
     updateHeldBlasterVisibility();
+    updateBossExitState();
     applyZoneAtmosphere();
     updateFlashlight();
     callbacks.onInventoryChange([]);
@@ -1471,7 +1559,20 @@ export function createPrototype(
   }
 
   function updateHeldBlasterVisibility(): void {
-    heldBlaster.setEnabled(currentZone === "boss-arena" && hasBossWeapon && !levelCompleted);
+    heldBlaster.setEnabled(
+      currentZone === "boss-arena" && hasBossWeapon && !levelCompleted && bossHealth > 0,
+    );
+  }
+
+  function updateBossExitState(): void {
+    const open = bossHealth === 0;
+    const material = open ? bossArena.exitOpenMaterial : bossArena.exitLockedMaterial;
+    bossArena.exitSign.material = material;
+    bossArena.exitStatusBars.forEach((bar) => {
+      bar.material = material;
+    });
+    bossArena.exitLight.diffuse = open ? new Color3(0.05, 1, 0.38) : new Color3(1, 0.05, 0.02);
+    bossArena.exitLight.intensity = open ? 0.58 : 0.32;
   }
 
   function shootBlaster(directionOverride?: Vector3): void {
@@ -1480,6 +1581,7 @@ export function createPrototype(
       currentZone !== "boss-arena" ||
       !hasBossWeapon ||
       levelCompleted ||
+      bossMode === "defeated" ||
       blasterCooldown > 0
     ) {
       return;
@@ -1542,16 +1644,15 @@ export function createPrototype(
 
     if (bossHealth === 0) {
       bossMode = "defeated";
-      levelCompleted = true;
-      escaped = true;
       clearBossProjectiles();
       bossArena.shieldMesh.setEnabled(false);
       bossArena.chargeMarker.setEnabled(false);
       verity.setEnabled(false);
       updateHeldBlasterVisibility();
+      updateBossExitState();
       callbacks.onPromptChange(null);
-      callbacks.onObjectiveChange("Верити побеждён. Вы выбрались из лиминального комплекса.");
-      callbacks.onStatusChange("Финальная цель уничтожена. Игра пройдена!");
+      callbacks.onObjectiveChange("Верити повержен. Доберитесь до зелёного аварийного шлюза.");
+      callbacks.onStatusChange("На дальней стене открылся последний выход.");
       emitProgress();
       return;
     }
@@ -2171,6 +2272,28 @@ export function createPrototype(
       emitProgress();
     },
   });
+  interactionSystem.register({
+    id: "boss-exit",
+    position: () => BOSS_EXIT_POSITION,
+    isAvailable: () =>
+      currentZone === "boss-arena" && bossMode === "defeated" && !levelCompleted,
+    prompt: () => "E — войти в аварийный шлюз",
+    interact: () => {
+      levelCompleted = true;
+      escaped = true;
+      running = false;
+      updateHeldBlasterVisibility();
+      callbacks.onPromptChange(null);
+      callbacks.onBossHealthChange(0, BOSS_MAX_HEALTH, false);
+      callbacks.onObjectiveChange("Выход найден. Комплекс остался позади.");
+      callbacks.onStatusChange("Аварийный шлюз закрылся за вами.");
+      callbacks.onAudioEvent("elevator");
+      emitProgress();
+      callbacks.onFinale();
+    },
+    maxDistance: 3.3,
+    priority: 120,
+  });
   hideSpots.forEach((spot, index) => {
     interactionSystem.register({
       id: `hide-spot-${index}`,
@@ -2225,14 +2348,15 @@ export function createPrototype(
       const active = currentZone === "pipe-dreams" && cycle < 2.15;
       if (active !== jet.active) {
         jet.active = active;
-        jet.cloud.setEnabled(active);
+        if (active) jet.steam.start();
+        else jet.steam.stop();
         jet.blocker.setEnabled(active);
         jet.blocker.checkCollisions = active;
       }
       if (active) {
         const pulse = 0.92 + Math.sin(performance.now() / 90 + jet.phaseOffset) * 0.08;
-        jet.cloud.scaling.y = 1.4 * pulse;
-        if (horizontalDistance(camera.position, jet.cloud.position) < 1.8 && steamWarningCooldown === 0) {
+        jet.steam.emitRate = 220 + pulse * 60;
+        if (horizontalDistance(camera.position, jet.position) < 1.8 && steamWarningCooldown === 0) {
           steamWarningCooldown = 1.2;
           callbacks.onStatusChange("Обжигающий пар перекрыл проход. Дождитесь паузы.");
         }
@@ -2335,7 +2459,7 @@ export function createPrototype(
 
     if (interactRequested) {
       interactRequested = false;
-      if (currentZone === "boss-arena" && hasBossWeapon) shootBlaster();
+      if (currentZone === "boss-arena" && hasBossWeapon && bossMode !== "defeated") shootBlaster();
       else interactionSystem.interactAt(camera.position);
     }
 
@@ -2520,6 +2644,7 @@ export function createPrototype(
         "lab-note": observationLab.notePosition.add(new Vector3(0, 0.65, 1.15)),
         "lab-exit": new Vector3(163.8, 1.7, 12),
         "boss-weapon": bossArena.weaponPosition.add(new Vector3(-1.2, 0.7, 0)),
+        "boss-exit": BOSS_EXIT_POSITION.add(new Vector3(-3.05, 0, 0)),
       };
       camera.position.copyFrom(positions[target]);
       const qaLookTargets: Partial<Record<typeof target, Vector3>> = {
@@ -2541,6 +2666,7 @@ export function createPrototype(
         "lab-note": observationLab.notePosition,
         "lab-exit": observationLab.exitDoor.position,
         "boss-weapon": bossArena.weaponPosition,
+        "boss-exit": BOSS_EXIT_POSITION,
       };
       const lookTarget = qaLookTargets[target];
       if (lookTarget) camera.setTarget(lookTarget);
@@ -2685,6 +2811,7 @@ function initialObjective(
 ): string {
   if (completed) return "Верити побеждён. Вы выбрались из лиминального комплекса.";
   if (zone === "boss-arena") {
+    if (bossHealth <= 0) return "Верити повержен. Доберитесь до зелёного аварийного шлюза.";
     if (!hasBossWeapon) return "Возьмите импульсное ружьё с оружейной стойки.";
     return `Фаза ${bossPhaseForHealth(bossHealth)}/3: уничтожьте три светящихся реле щита.`;
   }

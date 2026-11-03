@@ -55,6 +55,13 @@ const soundToggleButton = requiredElement<HTMLButtonElement>("sound-toggle-butto
 const caughtScreen = requiredElement<HTMLElement>("caught-screen");
 const caughtMessage = requiredElement<HTMLElement>("caught-message");
 const retryButton = requiredElement<HTMLButtonElement>("retry-button");
+const endingScreen = requiredElement<HTMLElement>("ending-screen");
+const endingCopy = requiredElement<HTMLElement>("ending-copy");
+const endingTitle = requiredElement<HTMLElement>("ending-title");
+const endingText = requiredElement<HTMLElement>("ending-text");
+const endingActions = requiredElement<HTMLElement>("ending-actions");
+const endingMenuButton = requiredElement<HTMLButtonElement>("ending-menu-button");
+const endingReplayButton = requiredElement<HTMLButtonElement>("ending-replay-button");
 
 const sound = new SoundManager();
 const previewParams = new URLSearchParams(window.location.search);
@@ -70,6 +77,7 @@ let started = false;
 let modalOpen = false;
 let resumeAfterModal = false;
 let transitionTimer: number | null = null;
+const endingTimers: number[] = [];
 
 const mobileControls = new MobileControls(mobileControlsRoot, {
   onMove(x, forward) {
@@ -95,6 +103,10 @@ if (mobileMode) {
 
 startButton.addEventListener("click", () => {
   if (!game) return;
+  if (saveData?.levelOne.completed) {
+    void selectLevel(4);
+    return;
+  }
   startScreen.classList.add("hidden");
   showGameControls();
   startButton.textContent = "Продолжить";
@@ -131,6 +143,14 @@ retryButton.addEventListener("click", () => {
   void sound.resume();
   game.restart();
   platform.gameplayStart();
+});
+
+endingMenuButton.addEventListener("click", () => {
+  window.location.reload();
+});
+
+endingReplayButton.addEventListener("click", () => {
+  void selectLevel(4);
 });
 
 document.addEventListener("pointerlockchange", () => {
@@ -212,6 +232,9 @@ async function bootstrap(): Promise<void> {
           void sound.pause();
           retryButton.focus();
         },
+        onFinale() {
+          showEndingSequence();
+        },
         onEscape() {
           pauseGame();
         },
@@ -248,7 +271,8 @@ async function bootstrap(): Promise<void> {
               | "lab-terminal-3"
               | "lab-note"
               | "lab-exit"
-              | "boss-weapon",
+              | "boss-weapon"
+              | "boss-exit",
           ): void;
           triggerCatchForQa(): void;
           shootForQa(): void;
@@ -323,7 +347,44 @@ function renderMenu(data: SaveData): void {
     data.levelOne.noteIds.length > 0 ||
     data.levelOne.batteryCollected;
   startButton.disabled = false;
-  startButton.textContent = hasProgress ? "Продолжить игру" : "Начать игру";
+  startButton.textContent = data.levelOne.completed
+    ? "Повторить финал"
+    : hasProgress
+      ? "Продолжить игру"
+      : "Начать игру";
+}
+
+function showEndingSequence(): void {
+  endingTimers.splice(0).forEach((timer) => window.clearTimeout(timer));
+  modalOpen = true;
+  resumeAfterModal = false;
+  started = false;
+  hideGameControls();
+  game?.pause();
+  platform.gameplayStop();
+  endingActions.classList.add("hidden");
+  endingTitle.textContent = "Шлюз закрывается";
+  endingText.textContent = "Гул комплекса остаётся по ту сторону двери.";
+  endingScreen.classList.remove("hidden");
+
+  const showBeat = (delay: number, title: string, text: string, revealActions = false) => {
+    endingTimers.push(
+      window.setTimeout(() => {
+        endingCopy.classList.remove("swap");
+        void endingCopy.offsetWidth;
+        endingCopy.classList.add("swap");
+        endingTitle.textContent = title;
+        endingText.textContent = text;
+        if (revealActions) {
+          endingActions.classList.remove("hidden");
+          endingMenuButton.focus();
+        }
+      }, delay),
+    );
+  };
+
+  showBeat(1500, "Сигнал Верити пропал", "Впервые вокруг нет ни шагов, ни смеха.");
+  showBeat(3100, "Вы выбрались", "Но жёлтый свет всё ещё мерцает где-то далеко.", true);
 }
 
 function showZoneTransition(title: string, subtitle: string): void {

@@ -11,6 +11,7 @@ import { createVoxelMaterial } from "./voxelMaterials";
 export const BOSS_PLAYER_START = new Vector3(177, 1.7, 0);
 export const BOSS_VERITY_START = new Vector3(202, 1.4, 0);
 export const BOSS_WEAPON_POSITION = new Vector3(179.2, 0.92, 0);
+export const BOSS_EXIT_POSITION = new Vector3(204.9, 1.7, 0);
 export type BossArenaScene = {
   wallSpecs: WallSpec[];
   weaponMeshes: Mesh[];
@@ -22,6 +23,12 @@ export type BossArenaScene = {
   shieldMesh: Mesh;
   projectileMaterial: StandardMaterial;
   chargeMarker: Mesh;
+  exitDoor: Mesh;
+  exitSign: Mesh;
+  exitStatusBars: Mesh[];
+  exitLight: PointLight;
+  exitLockedMaterial: StandardMaterial;
+  exitOpenMaterial: StandardMaterial;
 };
 
 export function createBossArena(scene: Scene): BossArenaScene {
@@ -47,6 +54,11 @@ export function createBossArena(scene: Scene): BossArenaScene {
   shieldMaterial.alpha = 0.23;
   shieldMaterial.backFaceCulling = false;
   const projectileMaterial = solid(scene, "boss-projectile", new Color3(1, 0.1, 0.025), true);
+  const exitDoorMaterial = solid(scene, "boss-exit-door-metal", new Color3(0.055, 0.07, 0.065));
+  exitDoorMaterial.emissiveColor = new Color3(0.022, 0.03, 0.027);
+  exitDoorMaterial.disableLighting = true;
+  const exitLockedMaterial = solid(scene, "boss-exit-locked", new Color3(0.45, 0.035, 0.02), true);
+  const exitOpenMaterial = solid(scene, "boss-exit-open", new Color3(0.03, 0.72, 0.31), true);
 
   const floor = MeshBuilder.CreateGround("boss-floor", { width: 32, height: 30 }, scene);
   floor.position.x = 190;
@@ -81,6 +93,55 @@ export function createBossArena(scene: Scene): BossArenaScene {
     mesh.checkCollisions = true;
     mesh.metadata = { blocksVision: true };
   });
+
+  const exitDoor = MeshBuilder.CreateBox(
+    "boss-exit-door",
+    { width: 0.22, height: 3.35, depth: 2.55 },
+    scene,
+  );
+  exitDoor.position.set(205.38, 1.68, 0);
+  exitDoor.material = exitDoorMaterial;
+  exitDoor.isPickable = false;
+
+  const exitStatusBars = [-0.9, 0.9].map((z, index) => {
+    const statusBar = MeshBuilder.CreateBox(
+      `boss-exit-status-${index}`,
+      { width: 0.08, height: 2.55, depth: 0.13 },
+      scene,
+    );
+    statusBar.position.set(205.23, 1.7, z);
+    statusBar.material = exitLockedMaterial;
+    return statusBar;
+  });
+
+  [-1.48, 1.48].forEach((z, index) => {
+    const frame = MeshBuilder.CreateBox(
+      `boss-exit-frame-${index}`,
+      { width: 0.48, height: 4.15, depth: 0.28 },
+      scene,
+    );
+    frame.position.set(205.12, 2.08, z);
+    frame.material = darkMetal;
+  });
+  const exitLintel = MeshBuilder.CreateBox(
+    "boss-exit-lintel",
+    { width: 0.48, height: 0.32, depth: 3.25 },
+    scene,
+  );
+  exitLintel.position.set(205.12, 4.02, 0);
+  exitLintel.material = darkMetal;
+
+  const exitSign = MeshBuilder.CreateBox(
+    "boss-exit-sign",
+    { width: 0.12, height: 0.34, depth: 1.25 },
+    scene,
+  );
+  exitSign.position.set(204.84, 4.32, 0);
+  exitSign.material = exitLockedMaterial;
+  const exitLight = new PointLight("boss-exit-light", new Vector3(203.9, 3.45, 0), scene);
+  exitLight.diffuse = new Color3(1, 0.05, 0.02);
+  exitLight.intensity = 0.32;
+  exitLight.range = 5.5;
 
   const weaponBase = MeshBuilder.CreateBox(
     "boss-weapon-base",
@@ -176,6 +237,12 @@ export function createBossArena(scene: Scene): BossArenaScene {
     shieldMesh,
     projectileMaterial,
     chargeMarker,
+    exitDoor,
+    exitSign,
+    exitStatusBars,
+    exitLight,
+    exitLockedMaterial,
+    exitOpenMaterial,
   };
 }
 

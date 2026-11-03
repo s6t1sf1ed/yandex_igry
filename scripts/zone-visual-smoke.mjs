@@ -114,9 +114,31 @@ try {
   const bossFight = join(tmpdir(), "liminal-boss-fight.png");
   await page.screenshot({ path: bossFight });
 
+  for (let shot = 0; shot < 2; shot += 1) {
+    await page.evaluate(() => window.__liminalHuntQa.shootForQa());
+  }
+  for (const hits of [3, 2]) {
+    for (let relay = 0; relay < 3; relay += 1) {
+      await page.evaluate(() => window.__liminalHuntQa.destroyBossRelayForQa());
+    }
+    for (let shot = 0; shot < hits; shot += 1) {
+      await page.evaluate(() => window.__liminalHuntQa.shootForQa());
+    }
+  }
+  await page.evaluate(() => window.__liminalHuntQa.teleportForQa("boss-exit"));
+  await page.waitForTimeout(180);
+  const bossExit = join(tmpdir(), "liminal-boss-exit.png");
+  await page.screenshot({ path: bossExit });
+  await page.keyboard.press("e");
+  await page.waitForTimeout(3300);
+  const ending = join(tmpdir(), "liminal-ending.png");
+  await page.screenshot({ path: ending });
+
   const state = await page.evaluate(() => window.__liminalHuntQa.state());
-  console.log(JSON.stringify({ screenshots: { yellowRooms, exitKey, pipeDreams, valveInactive, valveActive, blockMines, blockMinePickaxe, blockMinePortal, observationLab, labElevator, bossArena, bossFight }, state, errors }, null, 2));
-  if (state.zone !== "boss-arena" || !state.hasBossWeapon || state.bossHealth !== 7 || errors.length > 0) process.exitCode = 1;
+  const endingVisible = await page.locator("#ending-screen").isVisible();
+  const endingActionsVisible = await page.locator("#ending-actions").isVisible();
+  console.log(JSON.stringify({ screenshots: { yellowRooms, exitKey, pipeDreams, valveInactive, valveActive, blockMines, blockMinePickaxe, blockMinePortal, observationLab, labElevator, bossArena, bossFight, bossExit, ending }, endingVisible, endingActionsVisible, state, errors }, null, 2));
+  if (state.zone !== "boss-arena" || !state.hasBossWeapon || state.bossHealth !== 0 || !state.completed || !endingVisible || !endingActionsVisible || errors.length > 0) process.exitCode = 1;
 } finally {
   await browser.close();
 }

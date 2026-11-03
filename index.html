@@ -140,6 +140,19 @@
           <button id="retry-button" type="button">Попробовать снова</button>
         </div>
       </section>
+
+      <section id="ending-screen" class="hidden" aria-live="assertive">
+        <div class="ending-bars" aria-hidden="true"></div>
+        <div id="ending-copy" class="ending-copy">
+          <p class="eyebrow">ПОСЛЕДНИЙ ВЫХОД</p>
+          <h2 id="ending-title">Шлюз закрывается</h2>
+          <p id="ending-text">Гул комплекса остаётся по ту сторону двери.</p>
+          <div id="ending-actions" class="ending-actions hidden">
+            <button id="ending-menu-button" type="button">К уровням</button>
+            <button id="ending-replay-button" class="secondary-button" type="button">Повторить финал</button>
+          </div>
+        </div>
+      </section>
     </main>
 
     <script type="module" src="/src/main.ts"></script>

@@ -6,6 +6,7 @@ const EDGE_PATH = "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge
 const BASE_URL = process.env.LIMINAL_HUNT_URL ?? "http://127.0.0.1:4173/";
 const screenshot = join(tmpdir(), "liminal-boss-arena.png");
 const shieldScreenshot = join(tmpdir(), "liminal-boss-shield.png");
+const exitScreenshot = join(tmpdir(), "liminal-boss-exit.png");
 
 const browser = await chromium.launch({
   executablePath: EDGE_PATH,
@@ -78,6 +79,13 @@ try {
     await page.waitForTimeout(25);
   }
   const defeated = await page.evaluate(() => window.__liminalHuntQa.state());
+  await page.evaluate(() => window.__liminalHuntQa.teleportForQa("boss-exit"));
+  await page.waitForTimeout(100);
+  await page.screenshot({ path: exitScreenshot });
+  await page.keyboard.press("e");
+  await page.waitForTimeout(120);
+  const completed = await page.evaluate(() => window.__liminalHuntQa.state());
+  const endingVisible = await page.locator("#ending-screen").isVisible();
   const ok =
     armed.zone === "boss-arena" &&
     armed.hasBossWeapon &&
@@ -87,9 +95,11 @@ try {
     firstWindow.bossMode === "vulnerable" &&
     productionShot.bossHealth === 6 &&
     defeated.bossHealth === 0 &&
-    defeated.completed &&
+    !defeated.completed &&
+    completed.completed &&
+    endingVisible &&
     errors.length === 0;
-  console.log(JSON.stringify({ ok, screenshot, shieldScreenshot, armed, shieldBlocked, attacking, firstWindow, productionShot, defeated, errors }, null, 2));
+  console.log(JSON.stringify({ ok, screenshot, shieldScreenshot, exitScreenshot, armed, shieldBlocked, attacking, firstWindow, productionShot, defeated, completed, endingVisible, errors }, null, 2));
   if (!ok) process.exitCode = 1;
   await context.close();
 } finally {
